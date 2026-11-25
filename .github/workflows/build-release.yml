@@ -17,9 +17,11 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
-          ref: bd9ad78
+          repository: rholop/dual-subtitles
+          ref: bd9ad789b15dede013a099c70daa667a1f437a0e
+          fetch-depth: 0
 
       - name: Setup MSBuild
         uses: microsoft/setup-msbuild@v2
