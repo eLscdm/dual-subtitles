@@ -1,19 +1,15 @@
+
 name: Build Release Packages
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - master
-    tags:
-      - 'v*'
-  pull_request:
-    branches:
-      - master
-  workflow_dispatch:
 
 jobs:
   build:
-    runs-on: windows-latest
+    runs-on: windows-2022
 
     steps:
       - name: Checkout
@@ -29,8 +25,34 @@ jobs:
       - name: Restore solution
         run: msbuild XUnity.AutoTranslator.sln /t:Restore /p:Configuration=Release
 
-      - name: Build solution (Release)
-        run: msbuild XUnity.AutoTranslator.sln /p:Configuration=Release /m
+      - name: Build Trampolines first
+        shell: pwsh
+        run: |
+          msbuild src/XUnity.RuntimeHooker.Trampolines/XUnity.RuntimeHooker.Trampolines.csproj /p:Configuration=Release /m:1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Fix RuntimeHooker XCOPY
+        shell: pwsh
+        run: |
+          $project = (Resolve-Path "src/XUnity.RuntimeHooker/XUnity.RuntimeHooker.csproj").Path
+          [xml]$xml = Get-Content $project -Raw
+          $target = $xml.SelectSingleNode("//Target[@Name='PreBuild']")
+          $exec = $target.SelectSingleNode("Exec")
+          [void]$target.RemoveChild($exec)
+
+          $mkdir = $xml.CreateElement("MakeDir")
+          $mkdir.SetAttribute("Directories", '$(ProjectDir)Resources')
+          [void]$target.AppendChild($mkdir)
+
+          $copy = $xml.CreateElement("Copy")
+          $copy.SetAttribute("SourceFiles", '$(SolutionDir)src\XUnity.RuntimeHooker.Trampolines\$(OutDir)b979b301af8b4ef48f224de6dcf2ddf6.dll')
+          $copy.SetAttribute("DestinationFolder", '$(ProjectDir)Resources')
+          [void]$target.AppendChild($copy)
+
+          $xml.Save($project)
+
+      - name: Build solution
+        run: msbuild XUnity.AutoTranslator.sln /p:Configuration=Release /m:1
 
       - name: Upload release packages
         uses: actions/upload-artifact@v4
@@ -38,10 +60,3 @@ jobs:
           name: XUnity.AutoTranslator-packages
           path: dist/*.zip
           if-no-files-found: error
-
-      - name: Create GitHub release
-        if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v2
-        with:
-          files: dist/*.zip
-          generate_release_notes: true
